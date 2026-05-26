@@ -52,7 +52,7 @@ function clearText(){document.getElementById('voiceText').value='';document.getE
 function appendExample(){document.getElementById('voiceText').value='원팩딸기 3개\n우유 2개\n로투스 1박스';}
 function setVoiceStatus(msg){const el=document.getElementById('voiceStatus');el.textContent=msg;el.classList.toggle('show',!!msg);}
 function voiceErrorMessage(error){return {not_allowed:'마이크 권한이 막혀 있어요. 주소창 왼쪽 자물쇠에서 마이크를 허용해주세요.',service_not_allowed:'브라우저 음성 서비스가 막혀 있어요. 크롬에서 https 주소로 다시 열어주세요.',no_speech:'말소리가 잡히지 않았어요. 버튼을 다시 누르고 조금 더 가까이 말해주세요.',audio_capture:'마이크를 찾지 못했어요. 휴대폰/브라우저 마이크 권한을 확인해주세요.',network:'음성 인식 서버 연결이 불안정해요. 인터넷 연결 후 다시 시도해주세요.',aborted:'음성 인식이 취소됐어요. 다시 말하기를 눌러주세요.'}[String(error||'').replace(/-/g,'_')]||'음성 인식이 중단됐어요. 휴대폰 키보드의 마이크로 받아쓴 뒤 자동 반영을 눌러도 됩니다.';}
-let recognition=null;let isListening=false;let voiceBaseText='';
+let recognition=null;let isListening=false;
 function startVoice(){
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){
@@ -64,26 +64,21 @@ function startVoice(){
   if(isListening){recognition.stop();return;}
   recognition=new SpeechRecognition();
   recognition.lang='ko-KR';
-  recognition.continuous=true;
-  recognition.interimResults=true;
+  recognition.continuous=false;
+  recognition.interimResults=false;
   recognition.maxAlternatives=1;
   const btn=document.querySelector('.mic');
   recognition.onstart=function(){
     isListening=true;
-    voiceBaseText=document.getElementById('voiceText').value.trim();
     btn.textContent='⏹ 중지';
     btn.style.background='var(--warn)';
-    setVoiceStatus('🎙 듣고 있어요… 말씀해주세요. 끝나면 중지를 눌러주세요.');
+    setVoiceStatus('🎙 짧게 한 번만 말해주세요. 예: 원팩딸기 세 개, 우유 두 개, 로투스 십오 박스');
   };
   recognition.onresult=function(e){
-    let interim='',finalText='';
-    for(let i=0;i<e.results.length;i++){
-      if(e.results[i].isFinal)finalText+=e.results[i][0].transcript.trim();
-      else interim+=e.results[i][0].transcript;
-    }
+    const finalText=e.results[e.results.length-1][0].transcript.trim();
     const box=document.getElementById('voiceText');
-    if(finalText)box.value=(voiceBaseText?voiceBaseText+'\n':'')+finalText;
-    setVoiceStatus(interim?'💬 '+interim:'🎙 듣고 있어요…');
+    if(finalText)box.value=finalText;
+    setVoiceStatus('받아쓴 내용: '+finalText);
   };
   recognition.onerror=function(e){
     setVoiceStatus('⚠️ '+voiceErrorMessage(e.error));
@@ -95,7 +90,7 @@ function startVoice(){
     isListening=false;
     btn.textContent='음성 입력';
     btn.style.background='';
-    setVoiceStatus('✅ 완료! 내용을 확인하고 자동 반영을 눌러주세요.');
+    setVoiceStatus('✅ 완료! 내용이 이상하면 지우고 다시 말해주세요. 맞으면 자동 반영을 누르세요.');
   };
   recognition.start();
 }
