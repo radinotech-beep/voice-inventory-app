@@ -35,10 +35,12 @@ function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;'
 const ITEMS=DEFAULT_ITEMS.map((x,idx)=>({id:idx,name:cleanItemName(x.name),raw:x.name,location:x.storage||'미지정',unit:String(x.unit||'EA').toUpperCase(),key:norm(x.name)}));
 function load(){try{orders=JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){orders=[];}render();}
 function save(){localStorage.setItem(LS,JSON.stringify(orders));}
-function parseQty(text){const m=String(text).match(/(\d+)/);return m?parseInt(m[1],10):0;}
+function parseQty(text){const raw=String(text||'');const digit=raw.match(/(\d+)/);if(digit)return parseInt(digit[1],10);const compact=raw.replace(/\s+/g,'');const nums={'스물':20,'열아홉':19,'열여덟':18,'열일곱':17,'열여섯':16,'열다섯':15,'열네':14,'열넷':14,'열세':13,'열셋':13,'열두':12,'열둘':12,'열한':11,'열하나':11,'열':10,'아홉':9,'구':9,'여덟':8,'팔':8,'일곱':7,'칠':7,'여섯':6,'육':6,'다섯':5,'오':5,'네':4,'넷':4,'사':4,'세':3,'셋':3,'삼':3,'두':2,'둘':2,'이':2,'한':1,'하나':1,'일':1};for(const key of Object.keys(nums).sort((a,b)=>b.length-a.length)){if(compact.includes(key+'개')||compact.includes(key+'박스')||compact.includes(key+'팩')||compact.includes(key+'잔')||compact.includes(key+'EA'.toLowerCase())||compact.includes(key))return nums[key];}return 0;}
 function bestMatch(name){const key=norm(name);if(!key)return null;let best=null,score=0;for(const item of ITEMS){let s=0;if(item.key.includes(key)||key.includes(item.key))s=Math.min(item.key.length,key.length)+20;else{for(const ch of new Set(key)){if(item.key.includes(ch))s++;}}if(s>score){s=s;score=s;best=item;}}return score>=Math.max(2,Math.min(5,key.length-1))?best:null;}
-function lineToOrder(line){const qty=parseQty(line);if(!qty)return {miss:line,reason:'수량 없음'};const name=line.replace(/\d+\s*(개|박스|팩|ea|box|pak)?/ig,' ').trim();const item=bestMatch(name);if(!item)return {miss:line,reason:'품목 못 찾음'};return {item,qty};}
-function parseVoiceText(){const text=document.getElementById('voiceText').value;const lines=text.split(/[\n,，]/).map(x=>x.trim()).filter(Boolean);const misses=[];for(const line of lines){const parsed=lineToOrder(line);if(parsed.item){addOrSet(parsed.item,parsed.qty);}else misses.push(parsed);}render();renderMisses(misses);toast(misses.length?'일부 항목은 확인 필요':'발주 목록에 반영했어요');}
+function lineToOrder(line){const qty=parseQty(line);if(!qty)return {miss:line,reason:'수량 없음'};const name=line.replace(/\d+\s*(개|박스|팩|ea|box|pak)?/ig,' ').replace(/(한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열|열한|열두|열세|열네|열다섯|스물)\s*(개|박스|팩)?/g,' ').trim();const item=bestMatch(name);if(!item)return {miss:line,reason:'품목 못 찾음'};return {item,qty};}
+function aliasesFor(item){const a=[item.key];if(item.name.includes('원팩딸기'))a.push('원팩딸기','딸기원팩');if(item.name==='동원우유')a.push('우유','동원우유');if(item.name.includes('로투스'))a.push('로투스','로투스비스코프');return [...new Set(a.map(norm).filter(Boolean))];}
+function extractOrdersFromLine(line){const key=norm(line);const hits=[];for(const item of ITEMS){for(const alias of aliasesFor(item)){const idx=key.indexOf(alias);if(idx>=0)hits.push({idx,len:alias.length,item,alias});}}hits.sort((a,b)=>a.idx-b.idx||b.len-a.len);const chosen=[];for(const hit of hits){if(!chosen.some(x=>hit.idx<x.idx+x.len&&x.idx<hit.idx+hit.len))chosen.push(hit);}if(chosen.length<2)return null;const out=[];for(let i=0;i<chosen.length;i++){const start=chosen[i].idx+chosen[i].len;const end=i+1<chosen.length?chosen[i+1].idx:key.length;const qty=parseQty(key.slice(start,end));if(qty)out.push({item:chosen[i].item,qty});else out.push({miss:chosen[i].item.name,reason:'수량 없음'});}return out;}
+function parseVoiceText(){const text=document.getElementById('voiceText').value;const lines=[...new Set(text.split(/[\n,，]/).map(x=>x.trim()).filter(Boolean))];const misses=[];for(const line of lines){const multi=extractOrdersFromLine(line);if(multi){for(const parsed of multi){if(parsed.item)addOrSet(parsed.item,parsed.qty);else misses.push(parsed);}continue;}const parsed=lineToOrder(line);if(parsed.item){addOrSet(parsed.item,parsed.qty);}else misses.push(parsed);}render();renderMisses(misses);toast(misses.length?'일부 항목은 확인 필요':'발주 목록에 반영했어요');}
 function addOrSet(item,qty){const found=orders.find(x=>x.id===item.id);if(found)found.qty=String((parseInt(found.qty,10)||0)+qty);else orders.push({id:item.id,name:item.name,unit:item.unit,location:item.location,qty:String(qty)});save();}
 function renderMisses(misses){document.getElementById('missBox').innerHTML=misses.length?'<div class="miss">확인 필요<br>'+misses.map(x=>'- '+escapeHtml(x.miss)+' ('+x.reason+')').join('<br>')+'</div>':'';}
 function render(){document.getElementById('resultList').innerHTML=orders.length?orders.map((o,i)=>'<div class="row"><div><div class="name">'+escapeHtml(o.name)+'</div><div class="meta">'+escapeHtml(o.location)+'</div></div><input class="qty" inputmode="numeric" value="'+escapeHtml(o.qty)+'" oninput="updateQty('+i+',this.value)"><div class="unit">'+escapeHtml(o.unit)+'</div><button class="del" onclick="delOrder('+i+')">삭제</button></div>').join(''):'<div class="empty">아직 발주 목록이 없어요.</div>';}
@@ -50,7 +52,7 @@ function clearText(){document.getElementById('voiceText').value='';document.getE
 function appendExample(){document.getElementById('voiceText').value='원팩딸기 3개\n우유 2개\n로투스 1박스';}
 function setVoiceStatus(msg){const el=document.getElementById('voiceStatus');el.textContent=msg;el.classList.toggle('show',!!msg);}
 function voiceErrorMessage(error){return {not_allowed:'마이크 권한이 막혀 있어요. 주소창 왼쪽 자물쇠에서 마이크를 허용해주세요.',service_not_allowed:'브라우저 음성 서비스가 막혀 있어요. 크롬에서 https 주소로 다시 열어주세요.',no_speech:'말소리가 잡히지 않았어요. 버튼을 다시 누르고 조금 더 가까이 말해주세요.',audio_capture:'마이크를 찾지 못했어요. 휴대폰/브라우저 마이크 권한을 확인해주세요.',network:'음성 인식 서버 연결이 불안정해요. 인터넷 연결 후 다시 시도해주세요.',aborted:'음성 인식이 취소됐어요. 다시 말하기를 눌러주세요.'}[String(error||'').replace(/-/g,'_')]||'음성 인식이 중단됐어요. 휴대폰 키보드의 마이크로 받아쓴 뒤 자동 반영을 눌러도 됩니다.';}
-let recognition=null;let isListening=false;
+let recognition=null;let isListening=false;let voiceBaseText='';
 function startVoice(){
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){
@@ -68,18 +70,19 @@ function startVoice(){
   const btn=document.querySelector('.mic');
   recognition.onstart=function(){
     isListening=true;
+    voiceBaseText=document.getElementById('voiceText').value.trim();
     btn.textContent='⏹ 중지';
     btn.style.background='var(--warn)';
     setVoiceStatus('🎙 듣고 있어요… 말씀해주세요. 끝나면 중지를 눌러주세요.');
   };
   recognition.onresult=function(e){
-    let interim='',final='';
-    for(let i=e.resultIndex;i<e.results.length;i++){
-      if(e.results[i].isFinal)final+=e.results[i][0].transcript+'\n';
+    let interim='',finalText='';
+    for(let i=0;i<e.results.length;i++){
+      if(e.results[i].isFinal)finalText+=e.results[i][0].transcript.trim();
       else interim+=e.results[i][0].transcript;
     }
     const box=document.getElementById('voiceText');
-    if(final)box.value+=final;
+    if(finalText)box.value=(voiceBaseText?voiceBaseText+'\n':'')+finalText;
     setVoiceStatus(interim?'💬 '+interim:'🎙 듣고 있어요…');
   };
   recognition.onerror=function(e){
